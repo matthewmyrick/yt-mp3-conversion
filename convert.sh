@@ -83,13 +83,28 @@ if [[ ! -d "$BONEBEAT_MOUNT" ]]; then
     exit 3
 fi
 
+# macOS auto-creates AppleDouble sidecars (._<file>) on FAT32 volumes to store
+# extended attributes. They're invisible in Finder but show up to glob() and
+# break the reshuffle. dot_clean merges/removes them.
+clean_appledouble() {
+    if command -v dot_clean >/dev/null 2>&1; then
+        dot_clean -m "$BONEBEAT_MOUNT" 2>/dev/null || true
+    fi
+}
+
 wipe_bonebeat() {
-    # Delete everything at the volume root EXCEPT hidden files (e.g. .Trashes,
-    # .fseventsd) and the Windows-created 'System Volume Information' folder
-    # that FAT32 drives rely on.
-    echo "Wiping $BONEBEAT_MOUNT (preserving hidden files + 'System Volume Information')..."
+    # Delete everything at the volume root EXCEPT macOS system dotfiles
+    # (.Trashes, .fseventsd, .Spotlight-V100, etc.) and the Windows-created
+    # 'System Volume Information' folder that FAT32 drives rely on.
+    # AppleDouble sidecars (._*) ARE deleted — clean_appledouble already
+    # cleared them, but this guards against any new ones that re-appeared.
+    echo "Wiping $BONEBEAT_MOUNT (preserving system metadata folders)..."
     find "$BONEBEAT_MOUNT" -mindepth 1 -maxdepth 1 \
-        ! -name '.*' \
+        ! -name '.Trashes' \
+        ! -name '.fseventsd' \
+        ! -name '.Spotlight-V100' \
+        ! -name '.DocumentRevisions-V100' \
+        ! -name '.TemporaryItems' \
         ! -name 'System Volume Information' \
         -exec rm -rf {} +
     echo "Wipe complete."
@@ -97,6 +112,7 @@ wipe_bonebeat() {
 }
 
 if $RESHUFFLE; then
+    clean_appledouble
     exec "$PYTHON" "$MAIN" --reshuffle --output-dir "$BONEBEAT_MOUNT"
 fi
 
@@ -106,9 +122,14 @@ if [[ ! -f "$LINKS_FILE" ]]; then
     exit 2
 fi
 
+clean_appledouble
 wipe_bonebeat
 
-exec "$PYTHON" "$MAIN" \
+"$PYTHON" "$MAIN" \
     --links "$LINKS_FILE" \
     --output-dir "$BONEBEAT_MOUNT" \
     --randomize
+
+# Scrub any new AppleDouble sidecars yt-dlp/ffmpeg created during conversion,
+# so the device sees only the real .mp3 files.
+clean_appledouble

@@ -35,7 +35,10 @@ def reshuffle_directory(directory: Path) -> tuple[int, int]:
         log.error("Directory does not exist: %s", directory)
         return (0, 1)
 
-    mp3s = sorted(directory.glob("*.mp3"))
+    # Skip macOS AppleDouble sidecars (._foo.mp3) that get auto-created on
+    # FAT32 volumes like the BoneBeat earphones drive. They're metadata
+    # companions, not real audio.
+    mp3s = sorted(p for p in directory.glob("*.mp3") if not p.name.startswith("._"))
     if not mp3s:
         log.warning("No .mp3 files found in %s", directory)
         return (0, 0)

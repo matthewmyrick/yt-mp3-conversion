@@ -49,6 +49,9 @@ def total_library_duration(output_dir: Path) -> tuple[float, int, int]:
     counted = 0
     unreadable = 0
     for mp3 in sorted(output_dir.glob("*.mp3")):
+        # Skip macOS AppleDouble sidecars on FAT32 volumes (._foo.mp3).
+        if mp3.name.startswith("._"):
+            continue
         dur = get_mp3_duration_seconds(mp3)
         if dur is None:
             log.debug("Could not read duration: %s", mp3.name)
