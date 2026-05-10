@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import random
 import re
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -16,6 +17,17 @@ PREFIX_RE = re.compile(r"^\d+ - ")
 def strip_prefix(name: str) -> str:
     """Remove a leading 'NN - ' prefix if present."""
     return PREFIX_RE.sub("", name, count=1)
+
+
+def _nfc(path: Path) -> str:
+    """Return the path as an NFC-normalized string.
+
+    macOS's FAT32 (msdos) driver stores filenames in NFC but `os.listdir` /
+    `os.scandir` return them in NFD. `os.rename` then fails with ENOENT on any
+    file containing non-ASCII characters (e.g. 'Aminé', 'JAŸ-Z'). Normalizing
+    to NFC before passing to rename fixes it.
+    """
+    return unicodedata.normalize("NFC", str(path))
 
 
 def reshuffle_directory(directory: Path) -> tuple[int, int]:
@@ -55,7 +67,7 @@ def reshuffle_directory(directory: Path) -> tuple[int, int]:
     for i, (orig, bare) in enumerate(files):
         temp = directory / f".reshuffle-{run_tag}-{i}.mp3"
         try:
-            os.rename(orig, temp)
+            os.rename(_nfc(orig), _nfc(temp))
         except OSError as e:
             log.error("Failed to stage rename for %s: %s", orig.name, e)
             # Roll back: move any already-staged temps back to their originals.
@@ -69,7 +81,7 @@ def reshuffle_directory(directory: Path) -> tuple[int, int]:
     for i, (temp, bare) in enumerate(temps, start=1):
         final = directory / f"{i:0{width}d} - {bare}"
         try:
-            os.replace(temp, final)
+            os.replace(_nfc(temp), _nfc(final))
             log.info("✓ %s", final.name)
             renamed += 1
         except OSError as e:
@@ -88,6 +100,6 @@ def _rollback(
     for (temp, _), (orig, _) in zip(temps, originals):
         if temp.exists() and not orig.exists():
             try:
-                os.rename(temp, orig)
+                os.rename(_nfc(temp), _nfc(orig))
             except OSError as e:
                 log.error("Rollback failed for %s -> %s: %s", temp, orig, e)
